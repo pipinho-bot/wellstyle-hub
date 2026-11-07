@@ -65,58 +65,61 @@ def carregar_dados_gymrats(pasta_base):
                     conteudo = json.load(f)
                     
                     lista_items = []
-                    # O SEGREDO AGORA: Juntamos TODAS as gavetas do JSON de uma vez
                     if isinstance(conteudo, dict):
-                        for chave in ['messages', 'checkins', 'workouts', 'activities', 'feed']:
-                            if chave in conteudo and isinstance(conteudo[chave], list):
+                        # Pega de qualquer lista na raiz do JSON
+                        for chave in conteudo.keys():
+                            if isinstance(conteudo[chave], list):
                                 lista_items.extend(conteudo[chave])
                     elif isinstance(conteudo, list):
                         lista_items = conteudo
                         
                     for item in lista_items:
-                        data_str = item.get('created_at', item.get('start_time', item.get('date', '')))
+                        # Ignora itens que não parecem ser o bloco principal do Workout
+                        if not isinstance(item, dict) or 'created_at' not in item: continue
+                        
+                        data_str = item.get('occurred_at', item.get('created_at'))
                         if not data_str: continue
                         data_obj = datetime.strptime(str(data_str)[:19].replace('Z',''), "%Y-%m-%dT%H:%M:%S").date()
                         
-                        meta = item.get('metadata', item.get('checkin_data', item))
-                        if isinstance(meta, str):
-                            try: meta = json.loads(meta)
-                            except: meta = item
-                            
-                        # Função segura para extrair números
                         def parse_num(val, tipo):
-                            try: return tipo(val)
+                            try: return tipo(val) if val is not None else tipo(0)
                             except: return tipo(0)
 
-                        calorias_gym = parse_num(meta.get('calories', meta.get('kcal', meta.get('calories_burned', 0))), float)
-                        duracao_gym = parse_num(meta.get('duration', meta.get('duration_minutes', meta.get('time', 0))), float)
-                        passos = parse_num(meta.get('steps', meta.get('step_count', 0)), int)
+                        # Captura as métricas estruturadas que você mandou no modelo
+                        titulo = item.get('title', '')
+                        descricao = item.get('description', '')
+                        calorias = parse_num(item.get('calories'), float)
+                        passos = parse_num(item.get('steps'), int)
+                        duracao = parse_num(item.get('duration'), float)
                         
-                        # Extrai a distância e converte para KM se vier em metros
-                        distancia = parse_num(meta.get('distance', meta.get('distance_km', meta.get('distance_m', 0))), float)
-                        if distancia > 100: distancia = distancia / 1000.0 
+                        # Distância vem em milhas. Multiplicando por 1.609 para converter em KM.
+                        milhas = parse_num(item.get('distance_miles'), float)
+                        distancia_km = milhas * 1.60934
                         
-                        inicio_str = str(meta.get('start_time', meta.get('started_at', '')))
-                        fim_str = str(meta.get('end_time', meta.get('ended_at', '')))
-                        inicio = inicio_str[11:16] if len(inicio_str) > 15 else inicio_str
-                        fim = fim_str[11:16] if len(fim_str) > 15 else fim_str
-                        
-                        descricao = meta.get('description', meta.get('content', meta.get('text', meta.get('title', ''))))
-                        
+                        foto_url = item.get('photo_url', '')
+
                         dados.append({
                             'Data': data_obj, 
-                            'Mensagem': descricao,
-                            'Gym_Calorias': calorias_gym,
-                            'Gym_Duracao': duracao_gym,
+                            'Gym_Titulo': titulo,
+                            'Gym_Descricao': descricao if descricao else '',
+                            'Gym_Calorias': calorias,
+                            'Gym_Duracao': duracao,
                             'Gym_Passos': passos,
-                            'Gym_Distancia': distancia,
-                            'Gym_Inicio': inicio,
-                            'Gym_Fim': fim
+                            'Gym_Distancia': distancia_km,
+                            'Gym_Foto': foto_url
                         })
             except Exception as e: continue
             
     df = pd.DataFrame(dados)
-    if not df.empty: df['Data'] = pd.to_datetime(df['Data'])
+    if not df.empty: 
+        # Agrupa pelo dia caso haja 2 check-ins do Gymrats no mesmo dia
+        df = df.groupby('Data').agg({
+            'Gym_Calorias': 'sum', 'Gym_Duracao': 'sum', 'Gym_Passos': 'sum', 'Gym_Distancia': 'sum',
+            'Gym_Titulo': lambda x: ' | '.join(filter(None, x.unique())),
+            'Gym_Descricao': lambda x: ' | '.join(filter(None, x.unique())),
+            'Gym_Foto': lambda x: next((f for f in x if f), '')
+        }).reset_index()
+        df['Data'] = pd.to_datetime(df['Data'])
     return df
 
 def carregar_imagens(pasta_base):
@@ -232,7 +235,7 @@ with tab2:
 with tab3:
     if not df_gymrats.empty:
         st.markdown("#### Interações e Check-ins Brutos")
-        df_exibicao = df_gymrats[['Data', 'Mensagem', 'Gym_Calorias', 'Gym_Duracao', 'Gym_Passos', 'Gym_Distancia']].copy()
+        df_exibicao = df_gymrats[['Data', 'Gym_Titulo', 'Gym_Descricao', 'Gym_Calorias', 'Gym_Duracao', 'Gym_Passos', 'Gym_Distancia']].copy()
         df_exibicao['Data'] = df_exibicao['Data'].dt.strftime('%d/%m/%Y')
         st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
     else: st.info("Nenhum registro encontrado.")
@@ -264,21 +267,25 @@ with tab4:
             with c_social:
                 if not g_dia.empty:
                     for msg in g_dia.itertuples():
-                        # Apenas mostra se for um checkin rico ou uma mensagem válida
-                        if not msg.Mensagem and msg.Gym_Passos == 0 and msg.Gym_Calorias == 0:
-                            continue
+                        if not msg.Gym_Titulo and msg.Gym_Passos == 0 and msg.Gym_Calorias == 0: continue
                             
-                        texto_gym = f"**📱 Gymrats:** {msg.Mensagem}" if msg.Mensagem else "**📱 Gymrats:** Check-in de treino"
+                        # Montando o Card do Gymrats com as novas chaves
+                        texto_gym = f"**📱 {msg.Gym_Titulo if msg.Gym_Titulo else 'Check-in'}**"
+                        if msg.Gym_Descricao:
+                            texto_gym += f"\n\n*\"{msg.Gym_Descricao}\"*"
                         
                         tags = []
                         if msg.Gym_Calorias > 0: tags.append(f"🔥 {int(msg.Gym_Calorias)} kcal")
                         if msg.Gym_Duracao > 0: tags.append(f"⏱️ {int(msg.Gym_Duracao)} min")
-                        if msg.Gym_Passos > 0: tags.append(f"👟 {int(msg.Gym_Passos)} passos")
+                        if msg.Gym_Passos > 0: tags.append(f"👟 {int(msg.Gym_Passos)}")
                         if msg.Gym_Distancia > 0: tags.append(f"🗺️ {msg.Gym_Distancia:.1f} km")
-                        if msg.Gym_Inicio and msg.Gym_Fim: tags.append(f"🕒 {msg.Gym_Inicio} as {msg.Gym_Fim}")
                         
                         if tags:
                             texto_gym += f"\n\n👉 " + " | ".join(tags)
                             
                         st.success(texto_gym)
+                        
+                        # Se tiver postado foto no app (photo_url), renderiza também!
+                        if msg.Gym_Foto:
+                            st.image(msg.Gym_Foto, caption="Foto do Check-in", use_container_width=True)
             st.divider()
