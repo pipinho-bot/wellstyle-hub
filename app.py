@@ -39,7 +39,8 @@ def carregar_dados_tcx(pasta_base):
     if not os.path.exists(pasta_base): return pd.DataFrame()
         
     for arquivo in os.listdir(pasta_base):
-        if arquivo.endswith('.tcx'):
+        # O pulo do gato: aceitando o arquivo original ou o renomeado pelo Android
+        if arquivo.lower().endswith(('.tcx', '.tcx.txt')):
             try:
                 tree = ET.parse(os.path.join(pasta_base, arquivo))
                 root = tree.getroot()
