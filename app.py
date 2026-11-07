@@ -96,7 +96,6 @@ def carregar_imagens(pasta_base):
     # Regex para extrair formatos de data: 20260610 ou 2026-06-10
     padrao_data = re.compile(r'(\d{4})[-_]?(\d{2})[-_]?(\d{2})')
     
-    # Procura na pasta raiz e em subpastas se existirem
     pastas_alvo = [pasta_base, os.path.join(pasta_base, 'Balança'), os.path.join(pasta_base, 'Fotos')]
     
     for pasta in set(pastas_alvo):
@@ -106,9 +105,12 @@ def carregar_imagens(pasta_base):
                     match = padrao_data.search(arquivo)
                     if match:
                         ano, mes, dia = match.groups()
-                        data_obj = datetime(int(ano), int(mes), int(dia)).date()
+                        try:
+                            # Tenta criar a data. Se os números forem inválidos (ex: mês 15), ele pula.
+                            data_obj = datetime(int(ano), int(mes), int(dia)).date()
+                        except ValueError:
+                            continue
                         
-                        # Tenta adivinhar a categoria pelo nome ou pela pasta
                         categoria = "Físico"
                         if 'balan' in arquivo.lower() or 'balan' in pasta.lower():
                             categoria = "Balança"
@@ -123,7 +125,7 @@ def carregar_imagens(pasta_base):
     df = pd.DataFrame(dados)
     if not df.empty:
         df['Data'] = pd.to_datetime(df['Data'])
-        df = df.sort_values('Data', ascending=False) # Mais recentes primeiro
+        df = df.sort_values('Data', ascending=False)
     return df
 
 # 3. Processamento
