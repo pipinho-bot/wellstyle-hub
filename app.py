@@ -80,7 +80,7 @@ def carregar_dados_tcx(pasta_base):
     return df
 
 # 3. Processamento e Interface
-df_treinos = carregar_dados_tcx("Xiaomi") # Apontar para o diretório correto no deploy
+df_treinos = carregar_dados_tcx(".") # Apontar para o diretório correto no deploy
 
 if df_treinos.empty:
     st.info("Nenhum arquivo .tcx processado ainda. Suba a pasta 'Xiaomi' para visualizar os dados.")
