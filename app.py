@@ -151,4 +151,134 @@ if not df_imagens.empty: todas_datas.update(df_imagens['Data'].dt.date)
 # --- FILTROS (SIDEBAR) ---
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2964/2964514.png", width=80)
 st.sidebar.title("Filtros")
-meses_pt = {1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Jul
+meses_pt = {1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
+
+if todas_datas:
+    tipo_filtro = st.sidebar.radio("Analisar por:", ["Todo o Período", "Por Ano", "Por Mês"])
+    anos_disponiveis = sorted(list(set(d.year for d in todas_datas)), reverse=True)
+    ano_f = None
+    mes_f = None
+    
+    if tipo_filtro == "Por Ano":
+        ano_f = st.sidebar.selectbox("Selecione o Ano", anos_disponiveis)
+    elif tipo_filtro == "Por Mês":
+        ano_f = st.sidebar.selectbox("Selecione o Ano", anos_disponiveis)
+        meses_do_ano = sorted(list(set(d.month for d in todas_datas if d.year == ano_f)))
+        opcoes_meses = [meses_pt[m] for m in meses_do_ano]
+        mes_nome = st.sidebar.selectbox("Selecione o Mês", opcoes_meses)
+        mes_f = [k for k, v in meses_pt.items() if v == mes_nome][0]
+
+    if ano_f is not None:
+        if not df_treinos.empty: df_treinos = df_treinos[df_treinos['Data'].dt.year == ano_f]
+        if not df_gymrats.empty: df_gymrats = df_gymrats[df_gymrats['Data'].dt.year == ano_f]
+        if not df_imagens.empty: df_imagens = df_imagens[df_imagens['Data'].dt.year == ano_f]
+        todas_datas = {d for d in todas_datas if d.year == ano_f}
+        
+    if mes_f is not None:
+        if not df_treinos.empty: df_treinos = df_treinos[df_treinos['Data'].dt.month == mes_f]
+        if not df_gymrats.empty: df_gymrats = df_gymrats[df_gymrats['Data'].dt.month == mes_f]
+        if not df_imagens.empty: df_imagens = df_imagens[df_imagens['Data'].dt.month == mes_f]
+        todas_datas = {d for d in todas_datas if d.month == mes_f}
+
+st.title("⚡ Wellstyle Hub")
+st.markdown("### Monitoramento de Hipertrofia e Performance")
+
+# --- KPIs SUPERIORES ---
+calorias_tcx = int(df_treinos['Calorias'].sum()) if not df_treinos.empty else 0
+horas_tcx = int(df_treinos['Tempo_Minutos'].sum() / 60) if not df_treinos.empty else 0
+dias_tcx = df_treinos['Data'].nunique() if not df_treinos.empty else 0
+modalidade_top = df_treinos['Tipo'].mode()[0] if not df_treinos.empty and not df_treinos['Tipo'].mode().empty else "N/A"
+
+passos_gym = int(df_gymrats['Gym_Passos'].sum()) if not df_gymrats.empty else 0
+distancia_gym = float(df_gymrats['Gym_Distancia'].sum()) if not df_gymrats.empty else 0.0
+total_midia = len(df_imagens)
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("🔥 Calorias (Xiaomi)", f"{calorias_tcx:,}".replace(',', '.'))
+c2.metric("⏱️ Horas (Xiaomi)", f"{horas_tcx}h")
+c3.metric("📅 Dias Focados", f"{dias_tcx}")
+c4.metric("💪 Modalidade Top", modalidade_top.split('+')[0].strip()) 
+
+st.write("")
+c5, c6, c7 = st.columns(3)
+c5.metric("👟 Passos Totais (Gymrats)", f"{passos_gym:,}".replace(',', '.'))
+c6.metric("🗺️ Distância Total (Gymrats)", f"{distancia_gym:.1f} km")
+c7.metric("📸 Galeria Física (Fotos)", f"{total_midia} registros")
+st.divider()
+
+# --- ABAS ---
+tab1, tab2, tab3, tab4 = st.tabs(["📈 Gráficos & Dashboard", "📸 Galeria (Fotos e Balança)", "📱 Diário Gymrats", "🚀 Visão 360º (Timeline)"])
+
+with tab1:
+    if not df_treinos.empty:
+        st.markdown("#### Evolução de Gasto Calórico")
+        st.bar_chart(df_treinos.set_index('Data')[['Calorias']], color="#FF4B4B")
+        st.markdown("#### Frequência por Modalidade")
+        st.bar_chart(df_treinos['Tipo'].value_counts(), color="#00FFAA")
+    else: st.info("Nenhum treino encontrado para este filtro.")
+
+with tab2:
+    if not df_imagens.empty:
+        st.markdown("#### Acompanhamento Físico")
+        for data in sorted(df_imagens['Data'].dt.date.unique(), reverse=True):
+            imgs_do_dia = df_imagens[df_imagens['Data'].dt.date == data]
+            st.markdown(f"### {data.strftime('%d/%m/%Y')}")
+            cols = st.columns(len(imgs_do_dia))
+            for index, row in enumerate(imgs_do_dia.itertuples()):
+                cols[index].image(row.Caminho, caption=row.Categoria, use_container_width=True)
+            st.divider()
+    else: st.info("Nenhuma foto encontrada.")
+
+with tab3:
+    if not df_gymrats.empty:
+        st.markdown("#### Interações e Check-ins Brutos")
+        df_exibicao = df_gymrats[['Data', 'Mensagem', 'Gym_Calorias', 'Gym_Duracao', 'Gym_Passos', 'Gym_Distancia']].copy()
+        df_exibicao['Data'] = df_exibicao['Data'].dt.strftime('%d/%m/%Y')
+        st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+    else: st.info("Nenhum registro encontrado.")
+
+with tab4:
+    st.markdown("#### Cruzamento Diário de Alta Performance")
+    if not todas_datas:
+        st.info("Nenhum dado encontrado.")
+    else:
+        for data_alvo in sorted(list(todas_datas), reverse=True):
+            st.markdown(f"### 📅 {data_alvo.strftime('%d/%m/%Y')}")
+            
+            t_dia = df_treinos[df_treinos['Data'].dt.date == data_alvo] if not df_treinos.empty else pd.DataFrame()
+            g_dia = df_gymrats[df_gymrats['Data'].dt.date == data_alvo] if not df_gymrats.empty else pd.DataFrame()
+            i_dia = df_imagens[df_imagens['Data'].dt.date == data_alvo] if not df_imagens.empty else pd.DataFrame()
+            
+            c_treino, c_foto, c_social = st.columns([1, 1.2, 1.5])
+            
+            with c_treino:
+                if not t_dia.empty:
+                    st.info(f"**⌚ Sensor Xiaomi ({t_dia.iloc[0]['Tipo']})**\n\n🔥 {int(t_dia.iloc[0]['Calorias'])} kcal\n\n⏱️ {int(t_dia.iloc[0]['Tempo_Minutos'])} min\n\n❤️ {int(t_dia.iloc[0]['BPM_Medio'])} bpm")
+                else: st.write("😴 *Sem registro Xiaomi*")
+                    
+            with c_foto:
+                if not i_dia.empty:
+                    for img in i_dia.itertuples():
+                        st.image(img.Caminho, caption=f"{img.Categoria}", use_container_width=True)
+                        
+            with c_social:
+                if not g_dia.empty:
+                    for msg in g_dia.itertuples():
+                        # Apenas mostra se for um checkin rico ou uma mensagem válida
+                        if not msg.Mensagem and msg.Gym_Passos == 0 and msg.Gym_Calorias == 0:
+                            continue
+                            
+                        texto_gym = f"**📱 Gymrats:** {msg.Mensagem}" if msg.Mensagem else "**📱 Gymrats:** Check-in de treino"
+                        
+                        tags = []
+                        if msg.Gym_Calorias > 0: tags.append(f"🔥 {int(msg.Gym_Calorias)} kcal")
+                        if msg.Gym_Duracao > 0: tags.append(f"⏱️ {int(msg.Gym_Duracao)} min")
+                        if msg.Gym_Passos > 0: tags.append(f"👟 {int(msg.Gym_Passos)} passos")
+                        if msg.Gym_Distancia > 0: tags.append(f"🗺️ {msg.Gym_Distancia:.1f} km")
+                        if msg.Gym_Inicio and msg.Gym_Fim: tags.append(f"🕒 {msg.Gym_Inicio} as {msg.Gym_Fim}")
+                        
+                        if tags:
+                            texto_gym += f"\n\n👉 " + " | ".join(tags)
+                            
+                        st.success(texto_gym)
+            st.divider()
